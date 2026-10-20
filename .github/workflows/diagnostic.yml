@@ -1,0 +1,17 @@
+name: Diagnostic CIQUAL (temporaire)
+on: workflow_dispatch
+jobs:
+  d:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: |
+          python3 outils/telecharger_ciqual.py c.zip
+          unzip -l c.zip
+          unzip -o -q c.zip -d x
+          F=$(ls x/*compo* | head -1)
+          iconv -f windows-1252 -t utf-8 "$F" > compo.xml || cp "$F" compo.xml
+          head -c 1500 compo.xml; echo
+          grep -n -A12 "<alim_code> 13050 </alim_code>" compo.xml | head -120
+          grep -c "<COMPO>" compo.xml
+          grep -o "<const_code>[^<]*</const_code>" compo.xml | sort | uniq -c | sort -rn | head -80
