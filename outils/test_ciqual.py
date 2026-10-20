@@ -70,9 +70,9 @@ class TestCiqual(unittest.TestCase):
         lignes, version = ciqual.preparer(self.archive())
         self.assertEqual(version, "2020_07_07")
         self.assertEqual(len(lignes), 3)  # l'aliment sans énergie est écarté
-        self.assertAlmostEqual(lignes[1]["kcal"], 48.0)  # calculée : 4×0,5 + 4×10 + 2×3
+        self.assertAlmostEqual(lignes[0]["kcal"], 48.0)  # calculée : 4×0,5 + 4×10 + 2×3
         self.assertAlmostEqual(lignes[2]["kcal"], 100.0)  # kJ convertis
-        a = lignes[0]
+        a = lignes[1]
         self.assertEqual(a["nom"], "Pomme, crue, pulpe et peau")
         self.assertEqual(a["groupe"], "fruits, légumes, légumineuses et oléagineux")
         self.assertAlmostEqual(a["kcal"], 52.9)
@@ -86,7 +86,7 @@ class TestCiqual(unittest.TestCase):
         ciqual.ecrire(lignes, version, s)
         l = s.getvalue().splitlines()
         self.assertEqual(l[0], "#ciqual\t2020_07_07")
-        self.assertEqual(l[2], "13050\tPomme, crue, pulpe et peau\tfruits, légumes, légumineuses et oléagineux\t52.9\t0\t11.6\t0\t\t\t\t")
+        self.assertEqual(l[3], "13050\tPomme, crue, pulpe et peau\tfruits, légumes, légumineuses et oléagineux\t52.9\t0\t11.6\t0\t\t\t\t")
 
 
 if __name__ == "__main__":
