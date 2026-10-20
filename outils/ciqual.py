@@ -26,7 +26,7 @@ CONSTITUANTS = {
 }
 COLONNES = ["code", "nom", "groupe", *CONSTITUANTS.keys()]
 # Si l'énergie « règlement UE » manque : énergie selon les facteurs de Jones (kcal), puis kJ convertis.
-SECOURS_ENERGIE = {"333": "kcal_jones", "327": "kj_ue", "332": "kj_jones"}
+SECOURS_ENERGIE = {"333": "kcal_jones", "327": "kj_ue", "332": "kj_jones", "60000": "alcool", "65000": "acides_org"}
 
 ENREG = re.compile(r"<(ALIM|ALIM_GRP|COMPO)>(.*?)</\1>", re.S)
 CHAMP = re.compile(r"<(\w+)>(.*?)</\1>", re.S)
@@ -102,6 +102,14 @@ def preparer(archive: bytes) -> tuple[list[dict], str]:
                 a["kcal"] = a["kj_ue"] / 4.184
             elif a.get("kj_jones") is not None:
                 a["kcal"] = a["kj_jones"] / 4.184
+            elif all(a.get(k) is not None for k in ("prot", "gluc", "lip")):
+                # Énergie absente de la table (cas de la pomme crue en 2020) : on la calcule avec les
+                # coefficients du règlement UE 1169/2011 (4, 4, 9, fibres 2, alcool 7, acides organiques 3).
+                a["kcal"] = round(
+                    4 * a["prot"] + 4 * a["gluc"] + 9 * a["lip"] + 2 * (a.get("fibres") or 0)
+                    + 7 * (a.get("alcool") or 0) + 3 * (a.get("acides_org") or 0),
+                    1,
+                )
     sans = [a["nom"] for a in aliments.values() if a.get("kcal") is None]
     if sans:
         print(f"{len(sans)} aliments sans énergie écartés, par exemple : {sans[:5]}", file=sys.stderr)
