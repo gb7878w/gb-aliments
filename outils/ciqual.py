@@ -25,6 +25,8 @@ CONSTITUANTS = {
     "sel": "10004",      # Sel chlorure de sodium (g/100 g)
 }
 COLONNES = ["code", "nom", "groupe", *CONSTITUANTS.keys()]
+# Si l'énergie « règlement UE » manque : énergie selon les facteurs de Jones (kcal), puis kJ convertis.
+SECOURS_ENERGIE = {"333": "kcal_jones", "327": "kj_ue", "332": "kj_jones"}
 
 ENREG = re.compile(r"<(ALIM|ALIM_GRP|COMPO)>(.*?)</\1>", re.S)
 CHAMP = re.compile(r"<(\w+)>(.*?)</\1>", re.S)
@@ -86,12 +88,23 @@ def preparer(archive: bytes) -> tuple[list[dict], str]:
         nom = a.get("alim_nom_fr", "")
         if code and nom:
             aliments[code] = {"code": code, "nom": nom, "groupe": groupes.get(a.get("alim_grp_code", ""), "")}
-    codes = {v: k for k, v in CONSTITUANTS.items()}
+    codes = {v: k for k, v in CONSTITUANTS.items()} | SECOURS_ENERGIE
     for c in enregistrements(fichier(zf, "compo"), "COMPO"):
         a = aliments.get(c.get("alim_code", ""))
         cle = codes.get(c.get("const_code", ""))
         if a is not None and cle is not None:
             a[cle] = teneur(c.get("teneur", ""))
+    for a in aliments.values():
+        if a.get("kcal") is None:
+            if a.get("kcal_jones") is not None:
+                a["kcal"] = a["kcal_jones"]
+            elif a.get("kj_ue") is not None:
+                a["kcal"] = a["kj_ue"] / 4.184
+            elif a.get("kj_jones") is not None:
+                a["kcal"] = a["kj_jones"] / 4.184
+    sans = [a["nom"] for a in aliments.values() if a.get("kcal") is None]
+    if sans:
+        print(f"{len(sans)} aliments sans énergie écartés, par exemple : {sans[:5]}", file=sys.stderr)
     lignes = [a for a in aliments.values() if a.get("kcal") is not None]
     lignes.sort(key=lambda a: a["nom"].lower())
     return lignes, version

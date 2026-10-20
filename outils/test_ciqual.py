@@ -18,6 +18,11 @@ ALIM = """<?xml version="1.0" encoding="windows-1252"?>
 <alim_ssssgrp_code/>
 </ALIM>
 <ALIM>
+<alim_code> 2000 </alim_code>
+<alim_nom_fr> Riz blanc, cuit </alim_nom_fr>
+<alim_grp_code> 02 </alim_grp_code>
+</ALIM>
+<ALIM>
 <alim_code> 9999 </alim_code>
 <alim_nom_fr> Aliment sans énergie </alim_nom_fr>
 <alim_grp_code> 02 </alim_grp_code>
@@ -36,6 +41,8 @@ COMPO = """<?xml version="1.0" encoding="windows-1252"?>
 <COMPO><alim_code> 13050 </alim_code><const_code> 31000 </const_code><teneur> 11,6 </teneur></COMPO>
 <COMPO><alim_code> 13050 </alim_code><const_code> 40000 </const_code><teneur> traces </teneur></COMPO>
 <COMPO><alim_code> 13050 </alim_code><const_code> 10004 </const_code><teneur> - </teneur></COMPO>
+<COMPO><alim_code> 2000 </alim_code><const_code> 328 </const_code><teneur> - </teneur></COMPO>
+<COMPO><alim_code> 2000 </alim_code><const_code> 327 </const_code><teneur> 418,4 </teneur></COMPO>
 </TABLE>
 """.encode("windows-1252")
 
@@ -52,7 +59,8 @@ class TestCiqual(unittest.TestCase):
     def test_preparer(self):
         lignes, version = ciqual.preparer(self.archive())
         self.assertEqual(version, "2020_07_07")
-        self.assertEqual(len(lignes), 1)  # l'aliment sans énergie est écarté
+        self.assertEqual(len(lignes), 2)  # l'aliment sans énergie est écarté
+        self.assertAlmostEqual(lignes[1]["kcal"], 100.0)  # kJ convertis
         a = lignes[0]
         self.assertEqual(a["nom"], "Pomme, crue, pulpe et peau")
         self.assertEqual(a["groupe"], "fruits, légumes, légumineuses et oléagineux")
