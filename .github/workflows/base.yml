@@ -1,0 +1,70 @@
+name: Préparer la base d'aliments
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Le 3 de chaque mois à 4 h (heure de Paris en hiver).
+    - cron: "0 3 3 * *"
+  workflow_dispatch:
+
+jobs:
+  base:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Tests des scripts
+        run: python3 -m unittest discover -s outils -v
+
+      - name: Table CIQUAL de l'ANSES
+        run: |
+          mkdir -p sortie
+          python3 outils/telecharger_ciqual.py ciqual.zip
+          python3 outils/ciqual.py ciqual.zip sortie/ciqual.tsv
+
+      # Export complet d'Open Food Facts (plus d'1 Go compressé), lu en flux.
+      - name: Produits Open Food Facts vendus en France
+        run: |
+          curl -fsSL --retry 3 -A "gb-aliments (https://github.com/gb7878w/gb-aliments)" \
+            -o off.csv.gz https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz
+          python3 outils/openfoodfacts.py off.csv.gz sortie/off-fr.tsv.gz
+          rm off.csv.gz
+
+      - name: Manifeste (taille et empreinte de chaque fichier)
+        run: |
+          cd sortie
+          python3 - <<'PY'
+          import hashlib, json, os, datetime
+          fichiers = {}
+          for nom in sorted(os.listdir(".")):
+              with open(nom, "rb") as f:
+                  octets = f.read()
+              fichiers[nom] = {"taille": len(octets), "sha256": hashlib.sha256(octets).hexdigest()}
+          with open("ciqual.tsv", encoding="utf-8") as f:
+              version = f.readline().strip().split("\t")[1]
+          manifeste = {
+              "date": datetime.date.today().isoformat(),
+              "ciqual": version,
+              "fichiers": fichiers,
+          }
+          with open("manifeste.json", "w") as f:
+              json.dump(manifeste, f, indent=1)
+          print(json.dumps(manifeste, indent=1))
+          PY
+
+      - name: Publier la base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=derniere-base
+          NOTES="Base d'aliments de GB Santé du $(date +%Y-%m-%d) : table CIQUAL de l'ANSES (Licence Ouverte) et produits Open Food Facts vendus en France (licence ODbL)."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes "$NOTES"
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Base d'aliments" --notes "$NOTES"
+          fi
+          gh release upload "$TAG" sortie/* --clobber

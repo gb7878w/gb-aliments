@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""Prépare la table CIQUAL de l'ANSES (composition nutritionnelle des aliments) pour GB Santé.
+
+Entrée : l'archive ZIP « XML » publiée par l'ANSES (fichiers alim_*, alim_grp_*, compo_*).
+Sortie : un fichier TSV compact, une ligne par aliment, valeurs pour 100 g.
+
+Les fichiers XML de l'ANSES ne sont pas toujours du XML valide (teneurs du type « < 0,5 »),
+on lit donc chaque enregistrement avec une expression régulière plutôt qu'avec un parseur XML.
+"""
+import argparse
+import io
+import re
+import sys
+import zipfile
+
+# Codes des constituants CIQUAL (identiques dans les tables 2016, 2017, 2020).
+CONSTITUANTS = {
+    "kcal": "328",       # Énergie, Règlement UE N° 1169/2011 (kcal/100 g)
+    "prot": "25000",     # Protéines, N x facteur de Jones (g/100 g)
+    "gluc": "31000",     # Glucides (g/100 g)
+    "lip": "40000",      # Lipides (g/100 g)
+    "sucres": "32000",   # Sucres (g/100 g)
+    "fibres": "34100",   # Fibres alimentaires (g/100 g)
+    "satures": "40302",  # AG saturés (g/100 g)
+    "sel": "10004",      # Sel chlorure de sodium (g/100 g)
+}
+COLONNES = ["code", "nom", "groupe", *CONSTITUANTS.keys()]
+
+ENREG = re.compile(r"<(ALIM|ALIM_GRP|COMPO)>(.*?)</\1>", re.S)
+CHAMP = re.compile(r"<(\w+)>(.*?)</\1>", re.S)
+VIDE = re.compile(r"<(\w+)\s*/>")
+
+
+def decoder(octets: bytes) -> str:
+    entete = octets[:200].decode("ascii", "ignore")
+    m = re.search(r'encoding="([^"]+)"', entete)
+    enc = m.group(1) if m else "windows-1252"
+    try:
+        return octets.decode(enc)
+    except (LookupError, UnicodeDecodeError):
+        return octets.decode("windows-1252", "replace")
+
+
+def enregistrements(texte: str, balise: str):
+    for m in ENREG.finditer(texte):
+        if m.group(1) != balise:
+            continue
+        corps = VIDE.sub("", m.group(2))
+        yield {k: nettoyer(v) for k, v in CHAMP.findall(corps)}
+
+
+def nettoyer(v: str) -> str:
+    v = v.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&apos;", "'").replace("&quot;", '"')
+    return " ".join(v.split())
+
+
+def teneur(v: str):
+    """« 12,5 » -> 12.5 ; « traces » ou « < 0,5 » -> 0 ; « - » ou vide -> inconnu."""
+    v = (v or "").strip().lower()
+    if not v or v == "-":
+        return None
+    if v.startswith("trace") or v.startswith("<"):
+        return 0.0
+    try:
+        return float(v.replace(",", ".").replace(" ", ""))
+    except ValueError:
+        return None
+
+
+def fichier(zf: zipfile.ZipFile, prefixe: str) -> str:
+    noms = [n for n in zf.namelist() if re.match(rf"(.*/)?{prefixe}_\d", n.lower()) and n.lower().endswith(".xml")]
+    if not noms:
+        raise SystemExit(f"Fichier {prefixe}_*.xml introuvable dans l'archive : {zf.namelist()}")
+    return decoder(zf.read(sorted(noms)[-1]))
+
+
+def preparer(archive: bytes) -> tuple[list[dict], str]:
+    zf = zipfile.ZipFile(io.BytesIO(archive))
+    version = next((m.group(1) for n in zf.namelist() if (m := re.search(r"compo_(\d{4}_\d{2}_\d{2})", n))), "inconnue")
+    groupes = {}
+    for g in enregistrements(fichier(zf, "alim_grp"), "ALIM_GRP"):
+        groupes[g.get("alim_grp_code", "")] = g.get("alim_grp_nom_fr", "")
+    aliments = {}
+    for a in enregistrements(fichier(zf, "alim"), "ALIM"):
+        code = a.get("alim_code", "")
+        nom = a.get("alim_nom_fr", "")
+        if code and nom:
+            aliments[code] = {"code": code, "nom": nom, "groupe": groupes.get(a.get("alim_grp_code", ""), "")}
+    codes = {v: k for k, v in CONSTITUANTS.items()}
+    for c in enregistrements(fichier(zf, "compo"), "COMPO"):
+        a = aliments.get(c.get("alim_code", ""))
+        cle = codes.get(c.get("const_code", ""))
+        if a is not None and cle is not None:
+            a[cle] = teneur(c.get("teneur", ""))
+    lignes = [a for a in aliments.values() if a.get("kcal") is not None]
+    lignes.sort(key=lambda a: a["nom"].lower())
+    return lignes, version
+
+
+def format_nombre(v) -> str:
+    if v is None:
+        return ""
+    return f"{v:.2f}".rstrip("0").rstrip(".")
+
+
+def ecrire(lignes: list[dict], version: str, sortie) -> None:
+    sortie.write(f"#ciqual\t{version}\n")
+    sortie.write("\t".join(COLONNES) + "\n")
+    for a in lignes:
+        valeurs = [a["code"], a["nom"].replace("\t", " "), a["groupe"].replace("\t", " ")]
+        valeurs += [format_nombre(a.get(k)) for k in CONSTITUANTS]
+        sortie.write("\t".join(valeurs) + "\n")
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("archive", help="ZIP XML de la table CIQUAL")
+    p.add_argument("sortie", help="fichier TSV à écrire")
+    args = p.parse_args()
+    with open(args.archive, "rb") as f:
+        lignes, version = preparer(f.read())
+    if len(lignes) < 1000:
+        raise SystemExit(f"Seulement {len(lignes)} aliments lus : format CIQUAL changé ?")
+    with open(args.sortie, "w", encoding="utf-8", newline="\n") as s:
+        ecrire(lignes, version, s)
+    print(f"CIQUAL {version} : {len(lignes)} aliments", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
