@@ -11,6 +11,7 @@ import argparse
 import io
 import re
 import sys
+import unicodedata
 import zipfile
 
 # Codes des constituants CIQUAL (identiques dans les tables 2016, 2017, 2020).
@@ -24,11 +25,26 @@ CONSTITUANTS = {
     "satures": "40302",  # AG saturés (g/100 g)
     "sel": "10004",      # Sel chlorure de sodium (g/100 g)
 }
-COLONNES = ["code", "nom", "groupe", *CONSTITUANTS.keys()]
+# Vitamines, minéraux et alcool (pour 100 g). Les codes sont ceux de la table 2020 ; on les
+# retrouve aussi par le nom du constituant (fichier const_*), au cas où l'ANSES les renumérote.
+MICROS = {
+    "fer": ("10260", r"^fer\b"),                        # mg
+    "calcium": ("10200", r"^calcium\b"),                # mg
+    "magnesium": ("10120", r"^magnesium\b"),            # mg
+    "potassium": ("10190", r"^potassium\b"),            # mg
+    "zinc": ("10300", r"^zinc\b"),                      # mg
+    "iode": ("10530", r"^iode\b"),                      # µg
+    "vitd": ("52100", r"^vitamine d\s*\("),            # µg
+    "vitc": ("55100", r"^vitamine c\b"),                # mg
+    "b12": ("56600", r"^vitamine b12\b"),               # µg
+    "b9": ("56700", r"^vitamine b9\b|folates totaux"),  # µg
+    "alcool": ("60000", r"^alcool\b"),                  # g
+}
+COLONNES = ["code", "nom", "groupe", *CONSTITUANTS.keys(), *MICROS.keys()]
 # Si l'énergie « règlement UE » manque : énergie selon les facteurs de Jones (kcal), puis kJ convertis.
 SECOURS_ENERGIE = {"333": "kcal_jones", "327": "kj_ue", "332": "kj_jones", "60000": "alcool", "65000": "acides_org"}
 
-ENREG = re.compile(r"<(ALIM|ALIM_GRP|COMPO)>(.*?)</\1>", re.S)
+ENREG = re.compile(r"<(ALIM|ALIM_GRP|COMPO|CONST)>(.*?)</\1>", re.S)
 CHAMP = re.compile(r"<(\w+)>(.*?)</\1>", re.S)
 VIDE = re.compile(r"<(\w+)\s*/>")
 
@@ -76,6 +92,31 @@ def fichier(zf: zipfile.ZipFile, prefixe: str) -> str:
     return decoder(zf.read(sorted(noms)[-1]))
 
 
+def simplifier(v: str) -> str:
+    v = unicodedata.normalize("NFD", v.lower())
+    return "".join(c for c in v if not unicodedata.combining(c))
+
+
+def codes_micros(zf: zipfile.ZipFile) -> dict[str, str]:
+    """Code de chaque vitamine ou minéral : d'après le nom dans const_*.xml, sinon le code de 2020."""
+    codes = {cle: code for cle, (code, _) in MICROS.items()}
+    try:
+        texte = fichier(zf, "const")
+    except SystemExit:
+        return codes
+    trouves = {}
+    for c in enregistrements(texte, "CONST"):
+        nom = simplifier(c.get("const_nom_fr", ""))
+        for cle, (_, motif) in MICROS.items():
+            if cle not in trouves and re.search(motif, nom):
+                trouves[cle] = c.get("const_code", "")
+    for cle, code in trouves.items():
+        if code and code != codes[cle]:
+            print(f"{cle} : code {code} d'après son nom (au lieu de {codes[cle]})", file=sys.stderr)
+            codes[cle] = code
+    return codes
+
+
 def preparer(archive: bytes) -> tuple[list[dict], str]:
     zf = zipfile.ZipFile(io.BytesIO(archive))
     version = next((m.group(1) for n in zf.namelist() if (m := re.search(r"compo_(\d{4}_\d{2}_\d{2})", n))), "inconnue")
@@ -88,7 +129,10 @@ def preparer(archive: bytes) -> tuple[list[dict], str]:
         nom = a.get("alim_nom_fr", "")
         if code and nom:
             aliments[code] = {"code": code, "nom": nom, "groupe": groupes.get(a.get("alim_grp_code", ""), "")}
+    micros = codes_micros(zf)
     codes = {v: k for k, v in CONSTITUANTS.items()} | SECOURS_ENERGIE
+    # L'alcool sert aussi au calcul de l'énergie de secours : même clé.
+    codes |= {code: cle for cle, code in micros.items()}
     for c in enregistrements(fichier(zf, "compo"), "COMPO"):
         a = aliments.get(c.get("alim_code", ""))
         cle = codes.get(c.get("const_code", ""))
@@ -130,6 +174,7 @@ def ecrire(lignes: list[dict], version: str, sortie) -> None:
     for a in lignes:
         valeurs = [a["code"], a["nom"].replace("\t", " "), a["groupe"].replace("\t", " ")]
         valeurs += [format_nombre(a.get(k)) for k in CONSTITUANTS]
+        valeurs += [format_nombre(a.get(k)) for k in MICROS]
         sortie.write("\t".join(valeurs) + "\n")
 
 
@@ -145,6 +190,8 @@ def main() -> None:
     with open(args.sortie, "w", encoding="utf-8", newline="\n") as s:
         ecrire(lignes, version, s)
     print(f"CIQUAL {version} : {len(lignes)} aliments", file=sys.stderr)
+    for k in MICROS:
+        print(f"  {k} : {sum(1 for a in lignes if a.get(k) is not None)} aliments renseignés", file=sys.stderr)
 
 
 if __name__ == "__main__":

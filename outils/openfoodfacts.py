@@ -20,7 +20,8 @@ CHAMPS = {
     "satures": "saturated-fat_100g",
     "sel": "salt_100g",
 }
-COLONNES = ["code", "nom", "marque", *CHAMPS.keys(), "portion", "scans"]
+# Ajoutées après « scans » : les versions précédentes de GB Santé lisent les 13 premières colonnes.
+COLONNES = ["code", "nom", "marque", *CHAMPS.keys(), "portion", "scans", "nutriscore", "nova", "alcool"]
 
 
 def nombre(v: str, maxi: float):
@@ -38,6 +39,8 @@ def texte(v: str) -> str:
 def format_nombre(v) -> str:
     if v is None:
         return ""
+    if isinstance(v, str):
+        return v
     return f"{v:.2f}".rstrip("0").rstrip(".")
 
 
@@ -60,7 +63,20 @@ def produits(lignes):
             **valeurs,
             "portion": nombre(p.get("serving_quantity"), 5000),
             "scans": int(nombre(p.get("unique_scans_n"), 1e9) or 0),
+            "nutriscore": nutriscore(p.get("nutriscore_grade")),
+            "nova": nova(p.get("nova_group")),
+            "alcool": nombre(p.get("alcohol_100g"), 100),
         }
+
+
+def nutriscore(v: str) -> str:
+    v = (v or "").strip().lower()
+    return v.upper() if v in ("a", "b", "c", "d", "e") else ""
+
+
+def nova(v: str):
+    n = nombre(v, 4)
+    return int(n) if n is not None and n >= 1 and n == int(n) else None
 
 
 def main() -> None:

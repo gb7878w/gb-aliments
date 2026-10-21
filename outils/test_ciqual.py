@@ -53,6 +53,20 @@ COMPO = """<?xml version="1.0" encoding="windows-1252"?>
 <COMPO><alim_code> 3000 </alim_code><const_code> 34100 </const_code><teneur> 3 </teneur></COMPO>
 <COMPO><alim_code> 2000 </alim_code><const_code> 328 </const_code><teneur> - </teneur></COMPO>
 <COMPO><alim_code> 2000 </alim_code><const_code> 327 </const_code><teneur> 418,4 </teneur></COMPO>
+<COMPO><alim_code> 13050 </alim_code><const_code> 10260 </const_code><teneur> 0,12 </teneur></COMPO>
+<COMPO><alim_code> 13050 </alim_code><const_code> 55100 </const_code><teneur> 4,6 </teneur></COMPO>
+<COMPO><alim_code> 13050 </alim_code><const_code> 99999 </const_code><teneur> 7 </teneur></COMPO>
+</TABLE>
+""".encode("windows-1252")
+
+
+# La vitamine C renumérotée (99999) : retrouvée par son nom.
+CONST = """<?xml version="1.0" encoding="windows-1252"?>
+<TABLE>
+<CONST><const_code> 10260 </const_code><const_nom_fr> Fer (mg/100 g) </const_nom_fr></CONST>
+<CONST><const_code> 99999 </const_code><const_nom_fr> Vitamine C (mg/100 g) </const_nom_fr></CONST>
+<CONST><const_code> 52100 </const_code><const_nom_fr> Vitamine D (µg/100 g) </const_nom_fr></CONST>
+<CONST><const_code> 56700 </const_code><const_nom_fr> Vitamine B9 ou folates totaux (µg/100 g) </const_nom_fr></CONST>
 </TABLE>
 """.encode("windows-1252")
 
@@ -64,6 +78,7 @@ class TestCiqual(unittest.TestCase):
             z.writestr("alim_2020_07_07.xml", ALIM)
             z.writestr("alim_grp_2020_07_07.xml", GRP)
             z.writestr("compo_2020_07_07.xml", COMPO)
+            z.writestr("const_2020_07_07.xml", CONST)
         return b.getvalue()
 
     def test_preparer(self):
@@ -79,6 +94,9 @@ class TestCiqual(unittest.TestCase):
         self.assertEqual(a["prot"], 0.0)
         self.assertEqual(a["lip"], 0.0)
         self.assertIsNone(a["sel"])
+        self.assertAlmostEqual(a["fer"], 0.12)
+        self.assertAlmostEqual(a["vitc"], 7.0)  # code d'après le nom, pas l'ancien 55100
+        self.assertIsNone(a.get("calcium"))
 
     def test_ecrire(self):
         lignes, version = ciqual.preparer(self.archive())
@@ -86,7 +104,7 @@ class TestCiqual(unittest.TestCase):
         ciqual.ecrire(lignes, version, s)
         l = s.getvalue().splitlines()
         self.assertEqual(l[0], "#ciqual\t2020_07_07")
-        self.assertEqual(l[3], "13050\tPomme, crue, pulpe et peau\tfruits, légumes, légumineuses et oléagineux\t52.9\t0\t11.6\t0\t\t\t\t")
+        self.assertEqual(l[3], "13050\tPomme, crue, pulpe et peau\tfruits, légumes, légumineuses et oléagineux\t52.9\t0\t11.6\t0\t\t\t\t\t0.12\t\t\t\t\t\t\t7\t\t\t")
 
 
 if __name__ == "__main__":
