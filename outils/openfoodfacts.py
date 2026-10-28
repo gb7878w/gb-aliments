@@ -21,7 +21,7 @@ CHAMPS = {
     "sel": "salt_100g",
 }
 # Ajoutées après « scans » : les versions précédentes de GB Santé lisent les 13 premières colonnes.
-COLONNES = ["code", "nom", "marque", *CHAMPS.keys(), "portion", "scans", "nutriscore", "nova", "alcool"]
+COLONNES = ["code", "nom", "marque", *CHAMPS.keys(), "portion", "scans", "nutriscore", "nova", "alcool", "categorie"]
 
 
 def nombre(v: str, maxi: float):
@@ -66,7 +66,14 @@ def produits(lignes):
             "nutriscore": nutriscore(p.get("nutriscore_grade")),
             "nova": nova(p.get("nova_group")),
             "alcool": nombre(p.get("alcohol_100g"), 100),
+            "categorie": categorie(p.get("pnns_groups_2")),
         }
+
+
+def categorie(v: str) -> str:
+    """Groupe PNNS 2 d'Open Food Facts (une quarantaine de valeurs, ex. « Biscuits and cakes »), vide si inconnu."""
+    v = texte(v)
+    return "" if v.lower() in ("", "unknown", "en:unknown") else v
 
 
 def nutriscore(v: str) -> str:

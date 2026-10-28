@@ -12,7 +12,7 @@ Rien n'est collecté sur l'utilisateur : ce dépôt est public pour que GB Sant�
 | Fichier | Contenu |
 |---|---|
 | `ciqual.tsv` | une ligne par aliment : code, nom, groupe, kcal, protéines, glucides, lipides, sucres, fibres, AG saturés, sel, puis fer, calcium, magnésium, potassium, zinc (mg), iode (µg), vitamine D (µg), vitamine C (mg), B12 et folates B9 (µg), alcool (g), pour 100 g |
-| `off-fr.tsv.gz` | une ligne par produit, triée par code-barres : code, nom, marque, mêmes valeurs, portion (g), nombre de scans, Nutri-Score (A à E), groupe NOVA (1 à 4), alcool (g) |
+| `off-fr.tsv.gz` | une ligne par produit, triée par code-barres : code, nom, marque, mêmes valeurs, portion (g), nombre de scans, Nutri-Score (A à E), groupe NOVA (1 à 4), alcool (g), catégorie (groupe PNNS 2 d'Open Food Facts, ex. « Biscuits and cakes ») |
 | `manifeste.json` | date, version CIQUAL, taille et empreinte SHA-256 de chaque fichier |
 
 ## Mise à jour
