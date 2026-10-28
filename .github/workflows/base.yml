@@ -21,10 +21,18 @@ jobs:
         run: python3 -m unittest discover -s outils -v
 
       - name: Table CIQUAL de l'ANSES
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p sortie
-          python3 outils/telecharger_ciqual.py ciqual.zip
-          python3 outils/ciqual.py ciqual.zip sortie/ciqual.tsv
+          if python3 outils/telecharger_ciqual.py ciqual.zip; then
+            python3 outils/ciqual.py ciqual.zip sortie/ciqual.tsv
+          else
+            # Site de l'ANSES indisponible : on garde la table CIQUAL de la dernière base publiée (elle ne change qu'avec une nouvelle édition).
+            echo "ANSES injoignable : reprise de ciqual.tsv de la dernière base publiée"
+            gh release download derniere-base --pattern ciqual.tsv --dir sortie
+            test -s sortie/ciqual.tsv
+          fi
 
       # Export complet d'Open Food Facts (plus d'1 Go compressé), lu en flux.
       - name: Produits Open Food Facts vendus en France
